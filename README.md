@@ -4,7 +4,7 @@
 ## Cloning the repo
 You can start by cloning this repo in your wordspace and then start playing with the function to make your project done.
 
-git clone https://github.com/vai-20-dehi/Library-Management-System.git
+git clone https://github.com/sbmec04-lab/Library-Management.git
 
 ## Packages that need to be installed:
 
