@@ -1,319 +1,410 @@
 #include <iostream>
+#include <fstream> 
 #include <string>
 #include <vector>
 #include <ctime>
-#include <fstream>
 #include <sstream>
-#include <limits> // Zaroori hai buffer clear karne ke liye
+// #include<bits/stdc++.h>
 
-using namespace std;
+const std::string LIBRARY_FILE = "library_data.txt";
 
-// --- DATE HELPER FUNCTIONS ---
-
-string getCurrentDate() {
+std::string getCurrentDate() {
     time_t now = time(0);
     struct tm tstruct;
     char buf[80];
     tstruct = *localtime(&now);
+    // Format: YYYY-MM-DD
     strftime(buf, sizeof(buf), "%Y-%m-%d", &tstruct);
     return buf;
 }
 
-time_t parseDate(const string& dateStr) {
-    if (dateStr == "N/A" || dateStr.empty()) return 0;
-    struct tm tm = {0};
-    int year = stoi(dateStr.substr(0, 4));
-    int month = stoi(dateStr.substr(5, 2));
-    int day = stoi(dateStr.substr(8, 2));
-    tm.tm_year = year - 1900;
-    tm.tm_mon = month - 1;
-    tm.tm_mday = day;
-    return mktime(&tm);
+int calculateOverdueDays(const std::string& currentDate, const std::string& dueDate) {
+   
+    return (dueDate > currentDate) ? 0 : (std::stoi(currentDate.substr(8, 2)) - std::stoi(dueDate.substr(8, 2)));
 }
 
-int calculateOverdueDays(const string& currentDate, const string& dueDate) {
-    if (dueDate == "N/A" || dueDate.empty()) return 0;
-    if (dueDate >= currentDate) return 0;
-    time_t now = parseDate(currentDate);
-    time_t due = parseDate(dueDate);
-    double seconds = difftime(now, due);
-    return static_cast<int>(seconds / (60 * 60 * 24));
-}
-
-// --- CLASS: BOOK ---
 class Book {
 private:
-    string title;
-    string author;
+    std::string title;
+    std::string author;
     int id;
     bool isIssued;
-    string dueDate;
-
+    std::string dueDate;
 public:
-    Book(string t, string a, int i, bool issued = false, string date = "N/A")
-        : title(t), author(a), id(i), isIssued(issued), dueDate(date) {}
+    // Default constructor added for file loading
+    Book() : id(0), isIssued(false) {} 
 
-    string getTitle() const { return title; }
+    Book(const std::string& title, const std::string& author, int id)
+        : title(title), author(author), id(id), isIssued(false), dueDate("") {}
+
+    // Getters and Setters
+    const std::string& getTitle() const { return title; }
+    const std::string& getAuthor() const { return author; }
     int getID() const { return id; }
     bool getIssuedStatus() const { return isIssued; }
-    string getDueDate() const { return dueDate; }
-
     void setIsIssued(bool status) { isIssued = status; }
-    void setDueDate(string date) { dueDate = date; }
 
-    // File format: ID|Title|Author|Issued(1/0)|DueDate
-    string toFileString() const {
-        return to_string(id) + "|" + title + "|" + author + "|" + (isIssued ? "1" : "0") + "|" + dueDate;
-    }
+    void setDueDate(const std::string& dueDate) { this->dueDate = dueDate; }
+    const std::string& getDueDate() const { return dueDate; }
+
+    // Setters for file loading
+    void setTitle(const std::string& t) { title = t; }
+    void setAuthor(const std::string& a) { author = a; }
+    void setID(int i) { id = i; }
+    void setIssuedStatus(bool status) { isIssued = status; }
 
     double calculateFine() const {
-        if (!isIssued) return 0.0;
-        string currentDate = getCurrentDate();
-        int overdueDays = calculateOverdueDays(currentDate, dueDate);
-        if (overdueDays <= 0) return 0.0;
-        return overdueDays * 10.0; // 10 Rs per day fine
+        const double fineRatePerDay = 0.50; 
+        const double maxFine = 10.00; 
+        if (!getIssuedStatus()) {
+            return 0.0;
+        }
+        std::string dueDateString = getDueDate();
+        std::string currentDate = getCurrentDate();
+        int overdueDays = calculateOverdueDays(currentDate, dueDateString);
+        if (overdueDays <= 0) {
+            return 0.0; 
+        }
+        double calculatedFine = overdueDays * fineRatePerDay;
+        return (calculatedFine > maxFine) ? maxFine : calculatedFine;
+    }
+
+    // New: Method to serialize Book data for saving
+    std::string toString() const {
+        // Format: ID|Title|Author|isIssued|DueDate
+        return std::to_string(id) + "|" + title + "|" + author + "|" + 
+               (isIssued ? "1" : "0") + "|" + dueDate;
     }
 };
 
-// --- CLASS: LIBRARY ---
 class Library {
 private:
-    vector<Book> books;
-    const string filename = "library_data.txt";
-
-    vector<string> split(const string &s, char delimiter) {
-        vector<string> tokens;
-        string token;
-        istringstream tokenStream(s);
-        while (getline(tokenStream, token, delimiter)) {
-            tokens.push_back(token);
-        }
-        return tokens;
-    }
-
+    std::vector<Book> books; 
 public:
-    Library() { loadData(); }
+    // Load books from file
+    void loadBooksFromFile() {
+        std::ifstream inputFile(LIBRARY_FILE);
+        std::string line;
+        books.clear(); // Start with a clean slate
 
-    void loadData() {
-        books.clear();
-        ifstream file(filename);
-        if (!file.is_open()) {
-            // File nahi mili, koi baat nahi, nayi banegi
-            return; 
-        }
+        if (inputFile.is_open()) {
+            while (std::getline(inputFile, line)) {
+                // Use a stringstream to parse the line
+                std::stringstream ss(line);
+                std::string segment;
+                std::vector<std::string> parts;
 
-        string line;
-        while (getline(file, line)) {
-            if (line.empty()) continue;
-            vector<string> data = split(line, '|');
-            if (data.size() >= 5) {
-                int id = stoi(data[0]);
-                string title = data[1];
-                string author = data[2];
-                bool isIssued = (data[3] == "1");
-                string dueDate = data[4];
-                books.push_back(Book(title, author, id, isIssued, dueDate));
+                // Split the line by the delimiter '|'
+                while (std::getline(ss, segment, '|')) {
+                    parts.push_back(segment);
+                }
+
+                // Check if we have all 5 parts
+                if (parts.size() == 5) {
+                    Book book;
+                    try {
+                        book.setID(std::stoi(parts[0]));
+                        book.setTitle(parts[1]);
+                        book.setAuthor(parts[2]);
+                        book.setIssuedStatus(parts[3] == "1");
+                        book.setDueDate(parts[4]);
+                        books.push_back(book);
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error parsing book data: " << std::endl;
+                    }
+                }
             }
+            inputFile.close();
+            std::cout << "\n Library data loaded successfully from " << LIBRARY_FILE << std::endl;
+        } else {
+            std::cout << "\n No existing library data found. Starting with an empty library." << std::endl;
         }
-        file.close();
-        cout << "[System] Loaded " << books.size() << " books from database." << endl;
     }
 
-    void saveData() {
-        ofstream file(filename);
-        for (const auto& book : books) {
-            file << book.toFileString() << endl;
+    // New: Save books to file
+    void saveBooksToFile() const {
+        std::ofstream outputFile(LIBRARY_FILE);
+
+        if (outputFile.is_open()) {
+            for (const auto& book : books) {
+                outputFile << book.toString() << "\n";
+            }
+            outputFile.close();
+            std::cout << "\n Library data saved successfully to " << LIBRARY_FILE << std::endl;
+        } else {
+            std::cerr << "\n ERROR: Could not open file " << LIBRARY_FILE << " for saving." << std::endl;
         }
-        file.close();
     }
 
-    void addBook(string title, string author, int id) {
-        books.push_back(Book(title, author, id));
-        saveData();
-        cout << ">> Book Added Successfully!" << endl;
+    void addBook(const Book& book) {
+        books.push_back(book);
     }
 
-    void displayBooks() const {
-        if (books.empty()) {
-            cout << "\n>> No books available in the library yet." << endl;
-            return;
-        }
-        cout << "\n--- ALL BOOKS ---" << endl;
-        for (const auto& book : books) {
-            cout << "ID: " << book.getID() 
-                 << " | Title: " << book.getTitle() 
-                 << " | Status: " << (book.getIssuedStatus() ? "[ISSUED]" : "[AVAILABLE]");
-            if(book.getIssuedStatus()) cout << " | Due: " << book.getDueDate();
-            cout << endl;
-        }
-        cout << "-----------------" << endl;
-    }
-
-    void checkFine(int id) const {
-        bool found = false;
+    const Book* findBookById(int id) const { 
         for (const auto& book : books) {
             if (book.getID() == id) {
-                found = true;
-                if (book.getIssuedStatus()) {
-                    double fine = book.calculateFine();
-                    cout << "\nBook: " << book.getTitle() << endl;
-                    cout << "Due Date: " << book.getDueDate() << endl;
-                    if (fine > 0) cout << ">> FINE APPLICABLE: Rs. " << fine << endl;
-                    else cout << ">> No Fine. (Within due date)" << endl;
-                } else {
-                    cout << ">> This book is currently AVAILABLE (Not Issued)." << endl;
-                }
-                break;
+                return &book;
             }
         }
-        if (!found) cout << ">> Book ID not found!" << endl;
+        return nullptr;
     }
 
-    void issueBook(int id, string date) {
-        bool found = false;
+    Book* findBookById(int id) { 
         for (auto& book : books) {
             if (book.getID() == id) {
-                found = true;
-                if (!book.getIssuedStatus()) {
-                    book.setIsIssued(true);
-                    book.setDueDate(date);
-                    saveData();
-                    cout << ">> Book Issued Successfully!" << endl;
-                } else {
-                    cout << ">> Sorry, this book is ALREADY ISSUED." << endl;
-                }
-                break;
+                return &book;
             }
         }
-        if (!found) cout << ">> Book ID not found!" << endl;
+        return nullptr;
+    }
+
+    void issueBook(int id, const std::string& dueDate) {
+        Book* book = findBookById(id); 
+        if (book && !book->getIssuedStatus()) {
+            book->setIsIssued(true);
+            book->setDueDate(dueDate);  
+            std::cout << "Book issued: " << book->getTitle() << std::endl;
+        } else {
+            std::cout << "Book not found or already issued." << std::endl;
+        }
     }
 
     void returnBook(int id) {
-        bool found = false;
-        for (auto& book : books) {
-            if (book.getID() == id) {
-                found = true;
-                if (book.getIssuedStatus()) {
-                    double fine = book.calculateFine();
-                    cout << "Returning: " << book.getTitle() << endl;
-                    if (fine > 0) cout << ">> PAY FINE: Rs. " << fine << endl;
-                    
-                    book.setIsIssued(false);
-                    book.setDueDate("N/A");
-                    saveData();
-                    cout << ">> Book Returned Successfully!" << endl;
-                } else {
-                    cout << ">> Error: This book was not issued." << endl;
-                }
-                break;
+        Book* book = findBookById(id); 
+        if (book && book->getIssuedStatus()) {
+            book->setIsIssued(false);
+            std::cout << "Book returned: " << book->getTitle() << std::endl;
+        } else {
+            std::cout << "Book not found or not issued." << std::endl;
+        }
+    }
+
+    int getAvailableBooksCount() const {
+        int count = 0;
+        for (const auto& book : books) {
+            if (!book.getIssuedStatus()) {
+                count++;
             }
         }
-        if (!found) cout << ">> Book ID not found!" << endl;
+        return count;
     }
-    
-    // Helper to check if ID exists (to prevent duplicate IDs)
-    bool idExists(int id) {
+
+    void displayBooks() const {
+        std::cout << "Library Books:" << std::endl;
         for (const auto& book : books) {
-            if (book.getID() == id) return true;
+            std::cout << "ID: " << book.getID() << ", Title: " << book.getTitle() << ", Author: " << book.getAuthor();
+            if (book.getIssuedStatus()) {
+                std::cout << " (Issued - Due: " << book.getDueDate() << ")";
+            }
+            std::cout << std::endl;
         }
-        return false;
     }
 };
 
-// --- MENUS ---
-void adminMenu(Library& library) {
-    int choice;
-    do {
-        cout << "\n[ADMIN PANEL]\n1. Add Book\n2. Show All Books\n3. Check Fine\n4. Back\nChoice: ";
-        if (!(cin >> choice)) { // Input validation logic
-            cout << "Invalid input! Enter a number." << endl;
-            cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            continue;
-        }
+class LibrarySystem {
+public:
+    void adminMenu(Library& library) {
+        // ... (menu logic) ...
+        int adminChoice;
 
-        if (choice == 1) {
-            string title, author;
-            int id;
-            
-            cout << "Enter Book ID (Number): ";
-            cin >> id;
-            if (library.idExists(id)) {
-                cout << "Error: Book ID already exists!" << endl;
-                continue;
+        do {
+            std::cout << "\nAdmin Menu\n";
+            std::cout << "1. Add Book\n";
+            std::cout << "2. Number of Available Books\n";
+            std::cout << "3. Check for Fine\n";
+            std::cout << "4. Back to Main Menu\n";
+            std::cout << "Enter your choice: ";
+            std::cin >> adminChoice;
+
+            switch (adminChoice) {
+                case 1:
+                    addBook(library);
+                    break;
+                case 2:
+                    displayAvailableBooksCount(library);
+                    break;
+                case 3:
+                    checkFine(library);
+                    break;
+                case 4:
+                    // Save data before returning
+                    library.saveBooksToFile(); 
+                    std::cout << "Returning to Main Menu..." << std::endl;
+                    break;
+                default:
+                    std::cout << "Invalid choice. Please try again." << std::endl;
             }
+        } while (adminChoice != 4);
+    }
 
-            // Buffer Clear karna zaroori hai ID aur String ke beech mein
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); 
+    void studentMenu(Library& library) {
+        int studentChoice;
 
-            cout << "Enter Title: ";
-            getline(cin, title);
-            
-            cout << "Enter Author: ";
-            getline(cin, author);
+        do {
+            std::cout << "\nStudent Menu\n";
+            std::cout << "1. Search for Book\n";
+            std::cout << "2. Issue Book\n";
+            std::cout << "3. Return Book\n";
+            std::cout << "4. Back to Main Menu\n";
+            std::cout << "Enter your choice: ";
+            std::cout << "\nEnter your choice: ";
+            std::cin >> studentChoice;
 
-            library.addBook(title, author, id);
+            switch (studentChoice) {
+                case 1:
+                    searchForBook(library);
+                    break;
+                case 2:
+                    issueBook(library);
+                    break;
+                case 3:
+                    returnBook(library);
+                    break;
+                case 4:
+                    // Save data before returning
+                    library.saveBooksToFile(); 
+                    std::cout << "Returning to Main Menu..." << std::endl;
+                    break;
+                default:
+                    std::cout << "Invalid choice. Please try again." << std::endl;
+            }
+        } while (studentChoice != 4);
+    }
 
-        } else if (choice == 2) {
-            library.displayBooks();
-        } else if (choice == 3) {
-            int id;
-            cout << "Enter Book ID: "; cin >> id;
-            library.checkFine(id);
-        }
-    } while (choice != 4);
-}
+private:
+    void addBook(Library& library) {
+        std::string title, author;
+        int id;
 
-void studentMenu(Library& library) {
-    int choice;
-    do {
-        cout << "\n[STUDENT PANEL]\n1. Issue Book\n2. Return Book\n3. Back\nChoice: ";
-        if (!(cin >> choice)) {
-            cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            continue;
-        }
+        std::cout << "Enter Book Title: ";
+        std::cin.ignore(); 
+        std::getline(std::cin, title);
 
-        if (choice == 1) {
-            int id; string date;
-            cout << "Enter Book ID: "; cin >> id;
-            cout << "Enter Return Due Date (YYYY-MM-DD): "; cin >> date;
-            library.issueBook(id, date);
-        } else if (choice == 2) {
-            int id;
-            cout << "Enter Book ID: "; cin >> id;
-            library.returnBook(id);
-        }
-    } while (choice != 3);
-}
+        std::cout << "Enter Author: ";
+        std::getline(std::cin, author);
 
-// --- MAIN ---
-int main() {
-    Library library; // Data automatically load hoga
-    int choice;
+        std::cout << "Enter Book ID: ";
+        std::cin >> id;
 
-    while (true) {
-        cout << "\n=== LIBRARY MANAGEMENT SYSTEM ===\n1. Admin Login\n2. Student Login\n3. Exit\nChoice: ";
-        if (!(cin >> choice)) {
-            cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            continue;
-        }
+        Book newBook(title, author, id);
+        library.addBook(newBook);
 
-        if (choice == 1) {
-            string pass;
-            cout << "Enter Password (admin123): ";
-            cin >> pass;
-            if (pass == "admin123") {
-                adminMenu(library);
+        std::cout << "Book added successfully." << std::endl;
+    }
+
+    void displayAvailableBooksCount(const Library& library) const {
+        int count = library.getAvailableBooksCount();
+        std::cout << "Number of Available Books: " << count << std::endl;
+    }
+
+    void checkFine(const Library& library) const {
+        int id;
+        std::cout << "Enter Book ID to check for fine: ";
+        std::cin >> id;
+
+        const Book* book = library.findBookById(id);
+        if (book) {
+            if (book->getIssuedStatus()) {
+                std::cout << "Book Title: " << book->getTitle() << std::endl;
+                std::cout << "Due Date: " << book->getDueDate() << std::endl;
+                double fineAmount = book->calculateFine();
+                if (fineAmount > 0.0) {
+                    std::cout << "Fine Amount: $" << fineAmount << std::endl;
+                } else {
+                    std::cout << "No fines for this book." << std::endl;
+                }
             } else {
-                cout << ">> Wrong Password!" << endl;
+                std::cout << "Book is not currently issued." << std::endl;
             }
-        } else if (choice == 2) {
-            studentMenu(library);
-        } else if (choice == 3) {
-            cout << "Exiting..." << endl;
-            break;
         } else {
-            cout << "Invalid Choice." << endl;
+            std::cout << "Book not found." << std::endl;
         }
     }
+
+    void searchForBook(const Library& library) const {
+        int id;
+        std::cout << "Enter Book ID: ";
+        std::cin >> id;
+
+        const Book* book = library.findBookById(id);
+        if (book) {
+            std::cout << "Book found: " << book->getTitle() << ", Author: " << book->getAuthor();
+            if (book->getIssuedStatus()) {
+                std::cout << " (Issued - Due: " << book->getDueDate() << ")";
+            } else {
+                std::cout << " (Available)";
+            }
+            std::cout << std::endl;
+        } else {
+            std::cout << "Book not found." << std::endl;
+        }
+    }
+
+    void issueBook(Library& library) {
+        int id;
+        std::string dueDate;
+        std::cout << "Enter Book ID to issue: ";
+        std::cin >> id;
+        std::cout << "Enter Due Date (YYYY-MM-DD): ";
+        std::cin >> dueDate;
+        library.issueBook(id, dueDate);
+    }
+
+    void returnBook(Library& library) {
+        int id;
+        std::cout << "Enter Book ID to return: ";
+        std::cin >> id;
+        library.returnBook(id);
+    }
+};
+
+// --- Main Function (Updated) ---
+int main() {
+    Library library;
+    LibrarySystem librarySystem;
+
+    // Load existing data at startup
+    library.loadBooksFromFile();
+
+    
+    if (library.getAvailableBooksCount() == 0) {
+        library.addBook(Book("The Great Gatsby", "F. Scott Fitzgerald", 101));
+        library.addBook(Book("To Kill a Mockingbird", "Harper Lee", 102));
+        library.addBook(Book("1984", "George Orwell", 103));
+        std::cout << "\nDefault books added for first run." << std::endl;
+    }
+   
+
+    int mainChoice;
+
+    do {
+        std::cout << "\n=== Library Management System ===\n";
+        std::cout << "1. Admin\n";
+        std::cout << "2. Student\n";
+        std::cout << "3. Display All Books\n";
+        std::cout << "4. Exit\n";
+        std::cout << "Enter your choice: ";
+        std::cin >> mainChoice;
+
+        switch (mainChoice) {
+            case 1:
+                librarySystem.adminMenu(library);
+                break;
+            case 2:
+                librarySystem.studentMenu(library);
+                break;
+            case 3:
+                library.displayBooks();
+                break;
+            case 4:
+                // Save data one last time before exiting the program
+                library.saveBooksToFile(); 
+                std::cout << "Exiting..." << std::endl;
+                break;
+            default:
+                std::cout << "Invalid choice. Please try again." << std::endl;
+        }
+    } while (mainChoice != 4);
+
     return 0;
 }
